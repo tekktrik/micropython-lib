@@ -333,7 +333,10 @@ class AddrlistClass:
 
             if self.commentlist:
                 returnlist = [
-                    (SPACE.join(plist) + " (" + " ".join(self.commentlist) + ")", routeaddr)
+                    (
+                        SPACE.join(plist) + " (" + " ".join(self.commentlist) + ")",
+                        routeaddr,
+                    )
                 ]
             else:
                 returnlist = [(SPACE.join(plist), routeaddr)]

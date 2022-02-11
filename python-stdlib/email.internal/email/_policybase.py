@@ -335,7 +335,9 @@ class Compat32(Policy):
         if isinstance(value, str):
             if _has_surrogates(value):
                 if sanitize:
-                    h = header.Header(value, charset=_charset.UNKNOWN8BIT, header_name=name)
+                    h = header.Header(
+                        value, charset=_charset.UNKNOWN8BIT, header_name=name
+                    )
                 else:
                     # If we have raw 8bit data in a byte string, we have no idea
                     # what the encoding is.  There is no safe way to split this
@@ -351,7 +353,9 @@ class Compat32(Policy):
             # Assume it is a Header-like object.
             h = value
         if h is not None:
-            parts.append(h.encode(linesep=self.linesep, maxlinelen=self.max_line_length))
+            parts.append(
+                h.encode(linesep=self.linesep, maxlinelen=self.max_line_length)
+            )
         parts.append(self.linesep)
         return "".join(parts)
 

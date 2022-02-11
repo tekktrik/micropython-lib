@@ -180,7 +180,8 @@ def decode(ew):
     except UnicodeError:
         defects.append(
             errors.UndecodableBytesDefect(
-                "Encoded word " "contains bytes not decodable using {} charset".format(charset)
+                "Encoded word "
+                "contains bytes not decodable using {} charset".format(charset)
             )
         )
         string = bstring.decode(charset, "surrogateescape")
