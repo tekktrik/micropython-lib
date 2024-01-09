@@ -34,6 +34,7 @@ _FLAG_WRITE = const(0x0008)
 _FLAG_NOTIFY = const(0x0010)
 _FLAG_INDICATE = const(0x0020)
 
+
 # Forward IRQs directly to static methods on the type that handles them and
 # knows how to map handles to instances. Note: We copy all uuid and data
 # params here for safety, but a future optimisation might be able to avoid
@@ -48,9 +49,9 @@ def _client_irq(event, data):
         conn_handle, status = data
         ClientDiscover._discover_done(conn_handle, status)
     elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
-        conn_handle, def_handle, value_handle, properties, uuid = data
+        conn_handle, end_handle, value_handle, properties, uuid = data
         ClientDiscover._discover_result(
-            conn_handle, def_handle, value_handle, properties, bluetooth.UUID(uuid)
+            conn_handle, end_handle, value_handle, properties, bluetooth.UUID(uuid)
         )
     elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
         conn_handle, status = data
@@ -193,6 +194,29 @@ class ClientService:
 
 
 class BaseClientCharacteristic:
+    def __init__(self, value_handle, properties, uuid):
+        # Used for read/write/notify ops.
+        self._value_handle = value_handle
+
+        # Which operations are supported.
+        self.properties = properties
+
+        # Allows comparison to a known uuid.
+        self.uuid = uuid
+
+        if properties & _FLAG_READ:
+            # Fired for each read result and read done IRQ.
+            self._read_event = None
+            self._read_data = None
+            # Used to indicate that the read is complete.
+            self._read_status = None
+
+        if (properties & _FLAG_WRITE) or (properties & _FLAG_WRITE_NO_RESPONSE):
+            # Fired for the write done IRQ.
+            self._write_event = None
+            # Used to indicate that the write is complete.
+            self._write_status = None
+
     # Register this value handle so events can find us.
     def _register_with_connection(self):
         self._connection()._characteristics[self._value_handle] = self
@@ -246,16 +270,13 @@ class BaseClientCharacteristic:
             characteristic._read_status = status
             characteristic._read_event.set()
 
-    async def write(self, data, response=False, timeout_ms=1000):
+    async def write(self, data, response=None, timeout_ms=1000):
         self._check(_FLAG_WRITE | _FLAG_WRITE_NO_RESPONSE)
 
-        # If we only support write-with-response, then force sensible default.
-        if (
-            response is None
-            and (self.properties & _FLAGS_WRITE)
-            and not (self.properties & _FLAG_WRITE_NO_RESPONSE)
-        ):
-            response = True
+        # If the response arg is unset, then default it to true if we only support write-with-response.
+        if response is None:
+            p = self.properties
+            response = (p & _FLAG_WRITE) and not (p & _FLAG_WRITE_NO_RESPONSE)
 
         if response:
             # Same as read.
@@ -284,32 +305,16 @@ class BaseClientCharacteristic:
 # this class directly, instead use `async for characteristic in
 # service.characteristics([uuid])` or `await service.characteristic(uuid)`.
 class ClientCharacteristic(BaseClientCharacteristic):
-    def __init__(self, service, def_handle, value_handle, properties, uuid):
+    def __init__(self, service, end_handle, value_handle, properties, uuid):
         self.service = service
         self.connection = service.connection
 
-        # Used for read/write/notify ops.
-        self._def_handle = def_handle
-        self._value_handle = value_handle
+        # Used for descriptor discovery. If available, otherwise assume just
+        # past the value handle (enough for two descriptors without risking
+        # going into the next characteristic).
+        self._end_handle = end_handle if end_handle > value_handle else value_handle + 2
 
-        # Which operations are supported.
-        self.properties = properties
-
-        # Allows comparison to a known uuid.
-        self.uuid = uuid
-
-        if properties & _FLAG_READ:
-            # Fired for each read result and read done IRQ.
-            self._read_event = None
-            self._read_data = None
-            # Used to indicate that the read is complete.
-            self._read_status = None
-
-        if (properties & _FLAG_WRITE) or (properties & _FLAG_WRITE_NO_RESPONSE):
-            # Fired for the write done IRQ.
-            self._write_event = None
-            # Used to indicate that the write is complete.
-            self._write_status = None
+        super().__init__(value_handle, properties, uuid)
 
         if properties & _FLAG_NOTIFY:
             # Fired when a notification arrives.
@@ -323,7 +328,7 @@ class ClientCharacteristic(BaseClientCharacteristic):
 
     def __str__(self):
         return "Characteristic: {} {} {} {}".format(
-            self._def_handle, self._value_handle, self.properties, self.uuid
+            self._end_handle, self._value_handle, self.properties, self.uuid
         )
 
     def _connection(self):
@@ -434,19 +439,10 @@ class ClientDescriptor(BaseClientCharacteristic):
     def __init__(self, characteristic, dsc_handle, uuid):
         self.characteristic = characteristic
 
-        # Allows comparison to a known uuid.
-        self.uuid = uuid
-
-        # Used for read/write.
-        self._value_handle = dsc_handle
-
-        # Default flags
-        self.properties = _FLAG_READ | _FLAG_WRITE_NO_RESPONSE
+        super().__init__(dsc_handle, _FLAG_READ | _FLAG_WRITE, uuid)
 
     def __str__(self):
-        return "Descriptor: {} {} {} {}".format(
-            self._def_handle, self._value_handle, self.properties, self.uuid
-        )
+        return "Descriptor: {} {} {}".format(self._value_handle, self.properties, self.uuid)
 
     def _connection(self):
         return self.characteristic.service.connection
@@ -456,5 +452,5 @@ class ClientDescriptor(BaseClientCharacteristic):
         ble.gattc_discover_descriptors(
             characteristic._connection()._conn_handle,
             characteristic._value_handle,
-            characteristic._value_handle + 5,
+            characteristic._end_handle,
         )

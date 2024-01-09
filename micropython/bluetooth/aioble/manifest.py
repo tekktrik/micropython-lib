@@ -1,33 +1,15 @@
-import os
+# This directory contains all aioble code, but the manifest itself just
+# forwards to the component manifests, which themselves reference the actual
+# code. This allows (for development purposes) all the files to live in the
+# one directory.
 
-_files = (
-    "__init__.py",
-    "core.py",
-    "device.py",
-)
+metadata(version="0.4.1")
 
-options.defaults(peripheral=True, server=True)
-
-if options.central:
-    _files += ("central.py",)
-
-if options.client:
-    _files += ("client.py",)
-
-if options.peripheral:
-    _files += ("peripheral.py",)
-
-if options.server:
-    _files += ("server.py",)
-
-if options.l2cap:
-    _files += ("l2cap.py",)
-
-if options.security:
-    _files += ("security.py",)
-
-freeze(
-    ".",
-    tuple(os.path.join("aioble", f) for f in _files),
-    opt=3,
-)
+# Default installation gives you everything. Install the individual
+# components (or a combination of them) if you want a more minimal install.
+require("aioble-peripheral")
+require("aioble-server")
+require("aioble-central")
+require("aioble-client")
+require("aioble-l2cap")
+require("aioble-security")

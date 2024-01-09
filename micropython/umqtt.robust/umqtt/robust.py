@@ -3,7 +3,6 @@ from . import simple
 
 
 class MQTTClient(simple.MQTTClient):
-
     DELAY = 2
     DEBUG = False
 
@@ -42,3 +41,13 @@ class MQTTClient(simple.MQTTClient):
             except OSError as e:
                 self.log(False, e)
             self.reconnect()
+
+    def check_msg(self, attempts=2):
+        while attempts:
+            self.sock.setblocking(False)
+            try:
+                return super().wait_msg()
+            except OSError as e:
+                self.log(False, e)
+            self.reconnect()
+            attempts -= 1

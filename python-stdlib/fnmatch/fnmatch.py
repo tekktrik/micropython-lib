@@ -9,11 +9,21 @@ expression.  They cache the compiled regular expressions for speed.
 The function translate(PATTERN) returns a regular expression
 corresponding to PATTERN.  (It does not compile it.)
 """
-import os
-import os.path
 import re
 
-# import functools
+try:
+    from os.path import normcase
+except ImportError:
+
+    def normcase(s):
+        """
+        From os.path.normcase
+        Normalize the case of a pathname. On Windows, convert all characters
+        in the pathname to lowercase, and also convert forward slashes to
+        backward slashes. On other operating systems, return the path unchanged.
+        """
+        return s
+
 
 __all__ = ["filter", "fnmatch", "fnmatchcase", "translate"]
 
@@ -33,8 +43,8 @@ def fnmatch(name, pat):
     if the operating system requires it.
     If you don't want this, use fnmatchcase(FILENAME, PATTERN).
     """
-    name = os.path.normcase(name)
-    pat = os.path.normcase(pat)
+    name = normcase(name)
+    pat = normcase(pat)
     return fnmatchcase(name, pat)
 
 
@@ -46,16 +56,27 @@ def _compile_pattern(pat):
         res = bytes(res_str, "ISO-8859-1")
     else:
         res = translate(pat)
-    return re.compile(res).match
+
+    try:
+        ptn = re.compile(res)
+    except ValueError:
+        # re1.5 doesn't support all regex features
+        if res.startswith("(?ms)"):
+            res = res[5:]
+        if res.endswith("\\Z"):
+            res = res[:-2] + "$"
+        ptn = re.compile(res)
+
+    return ptn.match
 
 
 def filter(names, pat):
     """Return the subset of the list NAMES that match PAT."""
     result = []
-    pat = os.path.normcase(pat)
+    pat = normcase(pat)
     match = _compile_pattern(pat)
     for name in names:
-        if match(os.path.normcase(name)):
+        if match(normcase(name)):
             result.append(name)
     return result
 
@@ -104,6 +125,15 @@ def translate(pat):
                     stuff = "\\" + stuff
                 res = "%s[%s]" % (res, stuff)
         else:
-            res = res + re.escape(c)
+            try:
+                res = res + re.escape(c)
+            except AttributeError:
+                # Using ure rather than re-pcre
+                res = res + re_escape(c)
     # Original patterns is undefined, see http://bugs.python.org/issue21464
     return "(?ms)" + res + "\Z"
+
+
+def re_escape(pattern):
+    # Replacement minimal re.escape for ure compatibility
+    return re.sub(r"([\^\$\.\|\?\*\+\(\)\[\\])", r"\\\1", pattern)
